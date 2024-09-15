@@ -1,0 +1,10 @@
+{
+  "id": "pointer",
+  "name": "Pointer List",
+  "version": "1.0.0",
+  "minAppVersion": "0.12.0",
+  "description": "Простой плагин для поиска вложенных списков",
+  "author": "Artem Dmitrenko",
+  "authorUrl": "https://2ds.com",
+  "isDesktopOnly": false
+}

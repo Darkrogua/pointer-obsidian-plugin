@@ -1,0 +1,48 @@
+/* Стили для кнопки */
+.list-action-button {
+  background-color: #3498db;
+  color: red;
+  border: none;
+  padding: 5px 10px;
+  font-size: 14px;
+  border-radius: 5px;
+  cursor: pointer;
+  z-index: 1000;
+  box-shadow: 0px 2px 5px rgba(0, 0, 0, 0.3);
+}
+
+.list-action-button:hover {
+  background-color: #2980b9;
+}
+
+/* Стили для элементов списка в модалке */
+ul {
+  list-style: none;
+  padding: 0;
+}
+
+li {
+  padding: 5px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+/* Подсветка при наведении */
+li:hover {
+  background-color: #e0e0e0;
+}
+
+/* Стили для выбранного элемента */
+li.selected {
+  background-color: #a8d0e6;
+  font-weight: bold;
+}
+
+/* Поле ввода для поиска */
+input[type="text"] {
+  margin-bottom: 10px;
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
