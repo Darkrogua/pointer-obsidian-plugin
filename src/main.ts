@@ -2,6 +2,9 @@ import { Plugin, MarkdownView, Modal, App, Notice, TFile } from 'obsidian';
 import { EditorView } from '@codemirror/view';
 
 export default class ListSearchPlugin extends Plugin {
+
+    // Добавляем переменную для хранения информации о родительском элементе
+    parentElement: { text: string, position: number } | null = null;
     async onload() {
         console.log("List Search Plugin loaded");
 
@@ -25,9 +28,9 @@ export default class ListSearchPlugin extends Plugin {
                 this.registerDomEvent(document, 'keyup', () => {
                     const cursor = editorView.state.selection.main.head;
                     const line = editorView.state.doc.lineAt(cursor).text;
-
                     const indentLevel = line.search(/\S/);
 
+                    // Проверяем, является ли строка родительским элементом
                     if ((line.trim().startsWith('-') || line.trim().match(/^\d+\./)) && indentLevel === 0) {
                         const existingButton = document.querySelector('.list-action-button');
                         if (existingButton) existingButton.remove();
@@ -41,9 +44,15 @@ export default class ListSearchPlugin extends Plugin {
                             button.style.left = `${coords.left + 20}px`;
                             button.style.top = `${coords.top - 10}px`;
 
+                            // Сохраняем родительский элемент (его текст и позицию)
+                            this.parentElement = {
+                                text: line.replace(/^\s*[-*]\s+\[.\]\s*/, '').trim(),
+                                position: cursor
+                            };
+
                             button.onclick = async () => {
                                 const exerciseList = await this.loadExerciseList();
-                                new ExerciseModal(this.app, exerciseList, view).open();
+                                new ExerciseModal(this.app, exerciseList, view, this.parentElement).open(); // Передаем родительский элемент в модалку
                                 button.style.display = 'none';
                             };
 
@@ -52,6 +61,9 @@ export default class ListSearchPlugin extends Plugin {
                     } else {
                         const existingButton = document.querySelector('.list-action-button');
                         if (existingButton) existingButton.remove();
+
+                        // Очищаем сохраненный родительский элемент, если курсор перемещен с него
+                        this.parentElement = null;
                     }
                 });
             }
@@ -80,8 +92,15 @@ export default class ListSearchPlugin extends Plugin {
         for (const file of files) {
             const content = await this.app.vault.read(file);
             const dateMatch = content.match(/Дата: (\d{4}-\d{2}-\d{2})/);  // Предполагаем, что дата указана в формате "Дата: YYYY-MM-DD"
-            if (dateMatch) {
+
+            // Регулярное выражение для поиска точного совпадения слова
+            const searchRegex = new RegExp(`^\\s*[-*]\\s+\\[.\\]\\s+${searchTerm}\\s*$`, 'gm');
+
+            // Проверяем, содержит ли файл строку с искомым словом без дополнительных уточнений
+            if (searchRegex.test(content) && dateMatch) {
                 const fileDate = new Date(dateMatch[1]);
+
+                // Сравниваем дату файла с самой свежей датой
                 if (!freshestDate || fileDate > freshestDate) {
                     freshestDate = fileDate;
                     freshestFile = file;
@@ -89,17 +108,11 @@ export default class ListSearchPlugin extends Plugin {
             }
         }
 
-        if (freshestFile && freshestFile instanceof TFile) {
-            const fileContent = await this.app.vault.read(freshestFile);
-            if (fileContent.includes(searchTerm)) {
-                return freshestFile;
-            }
-        }
-
-        return null;
+        return freshestFile;
     }
 
-    async replaceInCurrentFile(freshestFile: TFile, searchTerm: string): Promise<boolean> {
+
+    async replaceInCurrentFile(freshestFile: TFile, searchTerm: string, parentElement: { text: string, position: number }): Promise<boolean> {
         const currentView = this.app.workspace.getActiveViewOfType(MarkdownView);
         if (!currentView || !currentView.file) {
             new Notice('Ошибка: не удалось найти текущий файл.');
@@ -111,41 +124,18 @@ export default class ListSearchPlugin extends Plugin {
         const freshestContent = await this.app.vault.read(freshestFile);
 
         // Шаг 1. Ищем родительский элемент и его дочерние элементы в свежем файле
-        const searchRegexInFreshest = new RegExp(`^\\s*[-*]\\s+\\[.\\]\\s+${searchTerm}`, 'gm');
-        const parentMatchInFreshest = searchRegexInFreshest.exec(freshestContent);
-
-        if (!parentMatchInFreshest) {
-            new Notice(`Не удалось найти элемент ${searchTerm} в свежем файле.`);
-            return false;
-        }
-
-        const parentIndexInFreshest = parentMatchInFreshest.index;
-        const linesInFreshest = freshestContent.slice(parentIndexInFreshest).split('\n');
-        let freshestBlock = [linesInFreshest[0]]; // Начинаем с родительской строки в свежем файле
-
-        // Идем по строкам, начиная с первой после родителя в свежем файле
-        for (let i = 1; i < linesInFreshest.length; i++) {
-            const line = linesInFreshest[i];
-            if (/^\s{1,}[-*]\s+\[.\]/.test(line)) {
-                // Это дочерний элемент с отступом, добавляем его
-                freshestBlock.push(line);
-            } else if (/^\s*[-*]\s+\[.\]/.test(line)) {
-                // Это новый родительский элемент, заканчиваем
-                break;
-            }
-        }
+        let freshestBlock = this.extractBlock(freshestContent, searchTerm);
 
         // Шаг 2. Заменяем [x] на [ ] в блоке из свежего файла
         const updatedFreshestBlock = freshestBlock.map(line => line.replace(/\[x\]/g, '[ ]'));
         const blockToReplaceWith = updatedFreshestBlock.join('\n');
 
+        // Шаг 3. Ищем родительский элемент и его дочерние элементы в текущем файле
+        let currentBlock = this.extractBlock(currentContent, parentElement.text);
+        const blockToReplace = currentBlock.join('\n');
 
-        // Шаг 3. Заменяем текущий выбранный блок в заметке на этот блок
-        const searchRegexInCurrent = new RegExp(`^\\s*[-*]\\s+\\[.\\]\\s+${searchTerm}`, 'gm');
-        const newContent = currentContent.replace(searchRegexInCurrent, blockToReplaceWith);
-
-        console.log("Текущее содержимое файла:", currentContent);
-        console.log("Новое содержимое файла:", newContent);
+        // Шаг 4. Заменяем текущий блок в заметке на новый блок
+        const newContent = currentContent.replace(blockToReplace, blockToReplaceWith);
 
         // Записываем новое содержимое в файл
         await this.app.vault.modify(currentFile, newContent);
@@ -161,6 +151,58 @@ export default class ListSearchPlugin extends Plugin {
     }
 
 
+    /**
+     * Функция для извлечения родительского элемента и его дочерних элементов.
+     * @param {string} content - Текст, содержащий элементы для поиска.
+     * @param {string} searchTerm - Искомое слово, которое должно содержаться в родительском элементе.
+     * @returns {string[]} - Массив строк, представляющих родительский элемент и его дочерние элементы.
+     */
+    extractBlock(content: string, searchTerm: string): string[] {
+        // Разбиваем весь контент на строки
+        const lines = content.split('\n');
+
+        // Регулярное выражение для поиска строки с родительским элементом
+        const searchRegex = new RegExp(`^\\s*[-*]\\s+\\[.\\]\\s+${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
+
+        // Ищем индекс родительского элемента
+        let parentIndex = -1;
+        for (let i = 0; i < lines.length; i++) {
+            if (searchRegex.test(lines[i])) {
+                parentIndex = i;
+                break;
+            }
+        }
+
+        // Если родительский элемент не найден, возвращаем пустой массив
+        if (parentIndex === -1) {
+            new Notice(`Не удалось найти элемент "${searchTerm}" в тексте.`);
+            return [];
+        }
+
+        const block: string[] = [lines[parentIndex]]; // Добавляем родительскую строку как первую строку блока
+
+        // Идем по строкам после родителя и собираем дочерние элементы (по отступам)
+        const parentIndentLevel = lines[parentIndex].search(/\S/);
+
+        for (let i = parentIndex + 1; i < lines.length; i++) {
+            const line = lines[i];
+            const currentIndentLevel = line.search(/\S/);
+
+            // Если отступ больше родительского, добавляем как дочерний элемент
+            if (currentIndentLevel > parentIndentLevel) {
+                block.push(line);
+            } else if (currentIndentLevel <= parentIndentLevel && line.trim().startsWith('-')) {
+                // Если встречаем новый родительский элемент с таким же уровнем отступа, прерываем цикл
+                break;
+            }
+        }
+
+        return block;
+    }
+
+
+
+
     onunload() {
         const existingButton = document.querySelector('.list-action-button');
         if (existingButton) existingButton.remove();
@@ -171,11 +213,13 @@ export default class ListSearchPlugin extends Plugin {
 class ExerciseModal extends Modal {
     exerciseList: string[];
     view: MarkdownView;
+    parentElement: { text: string, position: number } | null;
 
-    constructor(app: App, exerciseList: string[], view: MarkdownView) {
+    constructor(app: App, exerciseList: string[], view: MarkdownView, parentElement: { text: string, position: number } | null) {
         super(app);
         this.exerciseList = exerciseList;
         this.view = view;
+        this.parentElement = parentElement; // Сохраняем родительский элемент
     }
 
     onOpen() {
@@ -192,22 +236,48 @@ class ExerciseModal extends Modal {
                 const li = ul.createEl('li', { text: exercise });
 
                 li.onclick = async () => {
+                    if (!this.parentElement) {
+                        new Notice("Ошибка: не удалось найти родительский элемент.");
+                        return;
+                    }
+
+                    // Получаем текущий открытый файл
+                    const activeFile = this.app.workspace.getActiveFile();
+                    if (!activeFile) {
+                        new Notice('Ошибка: не удалось найти текущий файл.');
+                        return;
+                    }
+
+                    // Ищем свежий файл с этим упражнением
                     const freshestFile = await (this.app as any).plugins.plugins.pointer.findFreshestFile(exercise);
+
                     if (freshestFile) {
-                        new Notice(`Свежий файл найден: ${freshestFile.path}`);
-                        await (this.app as any).plugins.plugins.pointer.replaceInCurrentFile(freshestFile, exercise);
+                        // Проверяем, является ли свежий файл текущим открытым файлом
+                        if (freshestFile.path === activeFile.path) {
+                            new Notice(`Это упражнение уже есть в тренировке.`);
+                        } else {
+                            new Notice(`Свежий файл найден: ${freshestFile.path}`);
+
+                            // Заменяем родительский элемент в текущем файле содержимым из свежего файла
+                            await (this.app as any).plugins.plugins.pointer.replaceInCurrentFile(freshestFile, exercise, this.parentElement);
+                        }
                     } else {
                         new Notice(`Файл с упражнением ${exercise} не найден.`);
                     }
+
+                    // Закрываем модалку после замены
+                    this.close();
                 };
             });
         };
 
+        // Обработчик ввода в строке поиска
         searchInput.oninput = () => {
             const searchValue = searchInput.value.toLowerCase();
-            this.exerciseList = this.exerciseList.filter(exercise =>
+            const filteredList = this.exerciseList.filter(exercise =>
                 exercise.toLowerCase().includes(searchValue)
             );
+            this.exerciseList = filteredList;
             renderList();
         };
 
@@ -219,3 +289,4 @@ class ExerciseModal extends Modal {
         contentEl.empty();
     }
 }
+

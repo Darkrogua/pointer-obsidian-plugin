@@ -11,6 +11,11 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 Object.defineProperty(exports, "__esModule", { value: true });
 const obsidian_1 = require("obsidian");
 class ListSearchPlugin extends obsidian_1.Plugin {
+    constructor() {
+        super(...arguments);
+        // Добавляем переменную для хранения информации о родительском элементе
+        this.parentElement = null;
+    }
     onload() {
         return __awaiter(this, void 0, void 0, function* () {
             console.log("List Search Plugin loaded");
@@ -31,6 +36,7 @@ class ListSearchPlugin extends obsidian_1.Plugin {
                         const cursor = editorView.state.selection.main.head;
                         const line = editorView.state.doc.lineAt(cursor).text;
                         const indentLevel = line.search(/\S/);
+                        // Проверяем, является ли строка родительским элементом
                         if ((line.trim().startsWith('-') || line.trim().match(/^\d+\./)) && indentLevel === 0) {
                             const existingButton = document.querySelector('.list-action-button');
                             if (existingButton)
@@ -43,9 +49,14 @@ class ListSearchPlugin extends obsidian_1.Plugin {
                                 button.style.position = 'absolute';
                                 button.style.left = `${coords.left + 20}px`;
                                 button.style.top = `${coords.top - 10}px`;
+                                // Сохраняем родительский элемент (его текст и позицию)
+                                this.parentElement = {
+                                    text: line.replace(/^\s*[-*]\s+\[.\]\s*/, '').trim(),
+                                    position: cursor
+                                };
                                 button.onclick = () => __awaiter(this, void 0, void 0, function* () {
                                     const exerciseList = yield this.loadExerciseList();
-                                    new ExerciseModal(this.app, exerciseList, view).open();
+                                    new ExerciseModal(this.app, exerciseList, view, this.parentElement).open(); // Передаем родительский элемент в модалку
                                     button.style.display = 'none';
                                 });
                                 document.body.appendChild(button);
@@ -55,6 +66,8 @@ class ListSearchPlugin extends obsidian_1.Plugin {
                             const existingButton = document.querySelector('.list-action-button');
                             if (existingButton)
                                 existingButton.remove();
+                            // Очищаем сохраненный родительский элемент, если курсор перемещен с него
+                            this.parentElement = null;
                         }
                     });
                 }
@@ -84,24 +97,22 @@ class ListSearchPlugin extends obsidian_1.Plugin {
             for (const file of files) {
                 const content = yield this.app.vault.read(file);
                 const dateMatch = content.match(/Дата: (\d{4}-\d{2}-\d{2})/); // Предполагаем, что дата указана в формате "Дата: YYYY-MM-DD"
-                if (dateMatch) {
+                // Регулярное выражение для поиска точного совпадения слова
+                const searchRegex = new RegExp(`^\\s*[-*]\\s+\\[.\\]\\s+${searchTerm}\\s*$`, 'gm');
+                // Проверяем, содержит ли файл строку с искомым словом без дополнительных уточнений
+                if (searchRegex.test(content) && dateMatch) {
                     const fileDate = new Date(dateMatch[1]);
+                    // Сравниваем дату файла с самой свежей датой
                     if (!freshestDate || fileDate > freshestDate) {
                         freshestDate = fileDate;
                         freshestFile = file;
                     }
                 }
             }
-            if (freshestFile && freshestFile instanceof obsidian_1.TFile) {
-                const fileContent = yield this.app.vault.read(freshestFile);
-                if (fileContent.includes(searchTerm)) {
-                    return freshestFile;
-                }
-            }
-            return null;
+            return freshestFile;
         });
     }
-    replaceInCurrentFile(freshestFile, searchTerm) {
+    replaceInCurrentFile(freshestFile, searchTerm, parentElement) {
         return __awaiter(this, void 0, void 0, function* () {
             const currentView = this.app.workspace.getActiveViewOfType(obsidian_1.MarkdownView);
             if (!currentView || !currentView.file) {
@@ -112,34 +123,15 @@ class ListSearchPlugin extends obsidian_1.Plugin {
             const currentContent = yield this.app.vault.read(currentFile);
             const freshestContent = yield this.app.vault.read(freshestFile);
             // Шаг 1. Ищем родительский элемент и его дочерние элементы в свежем файле
-            const searchRegexInFreshest = new RegExp(`^\\s*[-*]\\s+\\[.\\]\\s+${searchTerm}`, 'gm');
-            const parentMatchInFreshest = searchRegexInFreshest.exec(freshestContent);
-            if (!parentMatchInFreshest) {
-                new obsidian_1.Notice(`Не удалось найти элемент ${searchTerm} в свежем файле.`);
-                return false;
-            }
-            const parentIndexInFreshest = parentMatchInFreshest.index;
-            const linesInFreshest = freshestContent.slice(parentIndexInFreshest).split('\n');
-            let freshestBlock = [linesInFreshest[0]]; // Начинаем с родительской строки в свежем файле
-            // Идем по строкам, начиная с первой после родителя в свежем файле
-            for (let i = 1; i < linesInFreshest.length; i++) {
-                const line = linesInFreshest[i];
-                if (/^\s{1,}[-*]\s+\[.\]/.test(line)) {
-                    // Это дочерний элемент с отступом, добавляем его
-                    freshestBlock.push(line);
-                }
-                else if (/^\s*[-*]\s+\[.\]/.test(line)) {
-                    // Это новый родительский элемент, заканчиваем
-                    break;
-                }
-            }
+            let freshestBlock = this.extractBlock(freshestContent, searchTerm);
             // Шаг 2. Заменяем [x] на [ ] в блоке из свежего файла
             const updatedFreshestBlock = freshestBlock.map(line => line.replace(/\[x\]/g, '[ ]'));
             const blockToReplaceWith = updatedFreshestBlock.join('\n');
-            console.log("Найдено в новом:", blockToReplaceWith);
-            // Шаг 3. Заменяем текущий выбранный блок в заметке на этот блок
-            const searchRegexInCurrent = new RegExp(`^\\s*[-*]\\s+\\[.\\]\\s+${searchTerm}`, 'gm');
-            const newContent = currentContent.replace(searchRegexInCurrent, blockToReplaceWith);
+            // Шаг 3. Ищем родительский элемент и его дочерние элементы в текущем файле
+            let currentBlock = this.extractBlock(currentContent, parentElement.text);
+            const blockToReplace = currentBlock.join('\n');
+            // Шаг 4. Заменяем текущий блок в заметке на новый блок
+            const newContent = currentContent.replace(blockToReplace, blockToReplaceWith);
             console.log("Текущее содержимое файла:", currentContent);
             console.log("Новое содержимое файла:", newContent);
             // Записываем новое содержимое в файл
@@ -155,6 +147,47 @@ class ListSearchPlugin extends obsidian_1.Plugin {
             }
         });
     }
+    /**
+     * Функция для извлечения родительского элемента и его дочерних элементов.
+     * @param {string} content - Текст, содержащий элементы для поиска.
+     * @param {string} searchTerm - Искомое слово, которое должно содержаться в родительском элементе.
+     * @returns {string[]} - Массив строк, представляющих родительский элемент и его дочерние элементы.
+     */
+    extractBlock(content, searchTerm) {
+        // Разбиваем весь контент на строки
+        const lines = content.split('\n');
+        // Регулярное выражение для поиска строки с родительским элементом
+        const searchRegex = new RegExp(`^\\s*[-*]\\s+\\[.\\]\\s+${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
+        // Ищем индекс родительского элемента
+        let parentIndex = -1;
+        for (let i = 0; i < lines.length; i++) {
+            if (searchRegex.test(lines[i])) {
+                parentIndex = i;
+                break;
+            }
+        }
+        // Если родительский элемент не найден, возвращаем пустой массив
+        if (parentIndex === -1) {
+            new obsidian_1.Notice(`Не удалось найти элемент "${searchTerm}" в тексте.`);
+            return [];
+        }
+        const block = [lines[parentIndex]]; // Добавляем родительскую строку как первую строку блока
+        // Идем по строкам после родителя и собираем дочерние элементы (по отступам)
+        const parentIndentLevel = lines[parentIndex].search(/\S/);
+        for (let i = parentIndex + 1; i < lines.length; i++) {
+            const line = lines[i];
+            const currentIndentLevel = line.search(/\S/);
+            // Если отступ больше родительского, добавляем как дочерний элемент
+            if (currentIndentLevel > parentIndentLevel) {
+                block.push(line);
+            }
+            else if (currentIndentLevel <= parentIndentLevel && line.trim().startsWith('-')) {
+                // Если встречаем новый родительский элемент с таким же уровнем отступа, прерываем цикл
+                break;
+            }
+        }
+        return block;
+    }
     onunload() {
         const existingButton = document.querySelector('.list-action-button');
         if (existingButton)
@@ -164,10 +197,11 @@ class ListSearchPlugin extends obsidian_1.Plugin {
 exports.default = ListSearchPlugin;
 // Модалка с поиском и возможностью выбора
 class ExerciseModal extends obsidian_1.Modal {
-    constructor(app, exerciseList, view) {
+    constructor(app, exerciseList, view, parentElement) {
         super(app);
         this.exerciseList = exerciseList;
         this.view = view;
+        this.parentElement = parentElement; // Сохраняем родительский элемент
     }
     onOpen() {
         const { contentEl } = this;
@@ -179,20 +213,42 @@ class ExerciseModal extends obsidian_1.Modal {
             this.exerciseList.forEach(exercise => {
                 const li = ul.createEl('li', { text: exercise });
                 li.onclick = () => __awaiter(this, void 0, void 0, function* () {
+                    if (!this.parentElement) {
+                        new obsidian_1.Notice("Ошибка: не удалось найти родительский элемент.");
+                        return;
+                    }
+                    // Получаем текущий открытый файл
+                    const activeFile = this.app.workspace.getActiveFile();
+                    if (!activeFile) {
+                        new obsidian_1.Notice('Ошибка: не удалось найти текущий файл.');
+                        return;
+                    }
+                    // Ищем свежий файл с этим упражнением
                     const freshestFile = yield this.app.plugins.plugins.pointer.findFreshestFile(exercise);
                     if (freshestFile) {
-                        new obsidian_1.Notice(`Свежий файл найден: ${freshestFile.path}`);
-                        yield this.app.plugins.plugins.pointer.replaceInCurrentFile(freshestFile, exercise);
+                        // Проверяем, является ли свежий файл текущим открытым файлом
+                        if (freshestFile.path === activeFile.path) {
+                            new obsidian_1.Notice(`Это упражнение уже есть в тренировке.`);
+                        }
+                        else {
+                            new obsidian_1.Notice(`Свежий файл найден: ${freshestFile.path}`);
+                            // Заменяем родительский элемент в текущем файле содержимым из свежего файла
+                            yield this.app.plugins.plugins.pointer.replaceInCurrentFile(freshestFile, exercise, this.parentElement);
+                        }
                     }
                     else {
                         new obsidian_1.Notice(`Файл с упражнением ${exercise} не найден.`);
                     }
+                    // Закрываем модалку после замены
+                    this.close();
                 });
             });
         };
+        // Обработчик ввода в строке поиска
         searchInput.oninput = () => {
             const searchValue = searchInput.value.toLowerCase();
-            this.exerciseList = this.exerciseList.filter(exercise => exercise.toLowerCase().includes(searchValue));
+            const filteredList = this.exerciseList.filter(exercise => exercise.toLowerCase().includes(searchValue));
+            this.exerciseList = filteredList;
             renderList();
         };
         renderList();
