@@ -52,4 +52,4 @@ If you want to install the plugin manually:
 - Compatible with both desktop and mobile versions of Obsidian.
 
 ##  Author
-Author name: (Artem Dmitrenko)[https://github.com/Darkrogua](fsfs)
+Author name: [Artem Dmitrenko](https://github.com/Darkrogua)
