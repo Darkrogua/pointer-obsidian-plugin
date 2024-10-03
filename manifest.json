@@ -1,10 +1,10 @@
 {
-  "id": "pointer",
-  "name": "Pointer List",
-  "version": "1.0.0",
-  "minAppVersion": "0.12.0",
+  "id": "list-search",
+  "name": "List Search",
+  "version": "1.0.1",
+  "minAppVersion": "1.6.5",
   "description": "Простой плагин для поиска вложенных списков",
   "author": "Artem Dmitrenko",
-  "authorUrl": "https://2ds.com",
+  "authorUrl": "https://github.com/Darkrogua/pointer-obsidian-plugin/tree/main",
   "isDesktopOnly": false
 }
