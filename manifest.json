@@ -5,6 +5,6 @@
   "minAppVersion": "1.6.5",
   "description": "Простой плагин для поиска вложенных списков",
   "author": "Artem Dmitrenko",
-  "authorUrl": "https://github.com/Darkrogua/pointer-obsidian-plugin/tree/main",
+  "authorUrl": "https://github.com/Darkrogua",
   "isDesktopOnly": false
 }
