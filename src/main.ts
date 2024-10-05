@@ -1,5 +1,6 @@
-import { Plugin, MarkdownView, Modal, App, Notice, TFile } from 'obsidian';
+import { Plugin, PluginSettingTab, Setting, MarkdownView, Modal, App, Notice, TFile } from 'obsidian';
 import { EditorView } from '@codemirror/view';
+
 
 export default class ListSearchPlugin extends Plugin {
 
@@ -12,18 +13,18 @@ export default class ListSearchPlugin extends Plugin {
             const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 
             if (view && view.getMode() === 'source') {
-                console.log("MarkdownView in source mode detected");
-
                 // Подключаем стили
-                const link = document.createElement('link');
-                link.rel = 'stylesheet';
-                link.href = '/styles.css'; // Укажите путь к вашему CSS-файлу
-                document.head.appendChild(link);
+                if (!document.querySelector(`link[href="/styles.css"]`)) {
+                    const link = document.createElement('link');
+                    link.rel = 'stylesheet';
+                    link.href = '/styles.css'; // Укажите путь к вашему CSS-файлу
+                    document.head.appendChild(link);
+                }
 
                 // Получаем доступ к CodeMirror 6
                 // @ts-expect-error – Obsidian не имеет типов для CM6
                 const editorView = view.editor.cm as EditorView;
-                console.log("CodeMirror editor detected", editorView);
+
 
                 this.registerDomEvent(document, 'keyup', () => {
                     const cursor = editorView.state.selection.main.head;
@@ -36,13 +37,14 @@ export default class ListSearchPlugin extends Plugin {
                         if (existingButton) existingButton.remove();
 
                         const coords = editorView.coordsAtPos(cursor);
+
                         if (coords) {
                             const button = document.createElement('button');
-                            button.textContent = "Изменить";
+                            button.innerHTML = "&#9998;";
                             button.classList.add('list-action-button');
-                            button.style.position = 'absolute';
                             button.style.left = `${coords.left + 20}px`;
                             button.style.top = `${coords.top - 10}px`;
+
 
                             // Сохраняем родительский элемент (его текст и позицию)
                             this.parentElement = {
@@ -50,10 +52,15 @@ export default class ListSearchPlugin extends Plugin {
                                 position: cursor
                             };
 
+                            // Добавляем таймер, чтобы кнопка исчезла через 3 секунды
+                            setTimeout(() => {
+                                if (button) button.remove();
+                            }, 3000); // 3000 миллисекунд = 3 секунды
+
                             button.onclick = async () => {
                                 const exerciseList = await this.loadExerciseList();
                                 new ExerciseModal(this.app, exerciseList, view, this.parentElement).open(); // Передаем родительский элемент в модалку
-                                button.style.display = 'none';
+                                button.remove();
                             };
 
                             document.body.appendChild(button);

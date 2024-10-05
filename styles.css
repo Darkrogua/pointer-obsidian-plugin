@@ -1,14 +1,18 @@
 /* Стили для кнопки */
 .list-action-button {
-  background-color: #3498db;
-  color: red;
+  background: none;
+  position: absolute;
+  color: orange;
   border: none;
-  padding: 5px 10px;
-  font-size: 14px;
+  padding: 0 5px;
+  font-size: 30px;
   border-radius: 5px;
+  line-height: 1;
+  /*left: 20px;*/
+  /*top: -10px;*/
   cursor: pointer;
-  z-index: 1000;
-  box-shadow: 0px 2px 5px rgba(0, 0, 0, 0.3);
+  z-index: 1;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
 }
 
 .list-action-button:hover {
