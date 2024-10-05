@@ -1,7 +1,7 @@
 {
   "id": "list-search",
   "name": "List Search",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "minAppVersion": "1.6.5",
   "description": "Простой плагин для поиска вложенных списков",
   "author": "Artem Dmitrenko",
