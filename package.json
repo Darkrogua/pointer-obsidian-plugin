@@ -4,7 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "npx tsc --project tsconfig.json",
+    "copy": "cp -r dist/main.js manifest.json styles.css ~/obsidian-libs/test-plugin/.obsidian/plugins/list-search/",
+    "build:copy": "npm run build && npm run copy",
+    "watch": "npx tsc --project tsconfig.json --watch"
   },
   "keywords": [],
   "author": "",
